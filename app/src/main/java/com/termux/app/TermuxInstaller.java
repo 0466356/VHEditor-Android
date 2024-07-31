@@ -20,9 +20,11 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import vn.vhn.vhscode.CodeServerService;
 import vn.vhn.vhscode.R;
 
 /**
@@ -61,7 +63,9 @@ public final class TermuxInstaller {
         }
 
         final File PREFIX_FILE = new File(TermuxService.PREFIX_PATH);
-        if (PREFIX_FILE.isDirectory()) {
+        // update for issue #161
+        final File LIBCPP_SHARED = new File(TermuxService.PREFIX_PATH + "/lib/libc++_shared.so");
+        if (PREFIX_FILE.isDirectory() && LIBCPP_SHARED.isFile()) {
             whenDone.run();
             return;
         }
@@ -82,44 +86,45 @@ public final class TermuxInstaller {
                     final byte[] buffer = new byte[kBufferSize * 2];
                     final List<Pair<String, String>> symlinks = new ArrayList<>(50);
 
-                    final byte[] zipBytes = loadZipBytes();
-                    try (ZipInputStream zipInput = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
-                        ZipEntry zipEntry;
-                        while ((zipEntry = zipInput.getNextEntry()) != null) {
-                            if (zipEntry.getName().equals("SYMLINKS.txt")) {
-                                BufferedReader symlinksReader = new BufferedReader(new InputStreamReader(zipInput));
-                                String line;
-                                while ((line = symlinksReader.readLine()) != null) {
-                                    String[] parts = line.split("←");
-                                    if (parts.length != 2)
-                                        throw new RuntimeException("Malformed symlink line: " + line);
-                                    String oldPath = parts[0];
-                                    String newPath = (STAGING_PREFIX_PATH + "/" + parts[1]);
-                                    symlinks.add(Pair.create(oldPath, newPath));
+                    loadZipBytes((final byte[] zipBytes) -> {
+                        try (ZipInputStream zipInput = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+                            ZipEntry zipEntry;
+                            while ((zipEntry = zipInput.getNextEntry()) != null) {
+                                if (zipEntry.getName().equals("SYMLINKS.txt")) {
+                                    BufferedReader symlinksReader = new BufferedReader(new InputStreamReader(zipInput));
+                                    String line;
+                                    while ((line = symlinksReader.readLine()) != null) {
+                                        String[] parts = line.split("←");
+                                        if (parts.length != 2)
+                                            throw new RuntimeException("Malformed symlink line: " + line);
+                                        String oldPath = parts[0];
+                                        String newPath = (STAGING_PREFIX_PATH + "/" + parts[1]);
+                                        symlinks.add(Pair.create(oldPath, newPath));
 
-                                    ensureDirectoryExists(new File(newPath).getParentFile());
-                                }
-                            } else {
-                                String zipEntryName = zipEntry.getName();
-                                File targetFile = new File(STAGING_PREFIX_PATH, zipEntryName);
-                                boolean isDirectory = zipEntry.isDirectory();
-
-                                ensureDirectoryExists(isDirectory ? targetFile : targetFile.getParentFile());
-
-                                if (!isDirectory) {
-                                    try (FileOutputStream outStream = new FileOutputStream(targetFile)) {
-                                        int readBytes;
-                                        while ((readBytes = zipInput.read(buffer)) != -1)
-                                            outStream.write(buffer, 0, readBytes);
+                                        ensureDirectoryExists(new File(newPath).getParentFile());
                                     }
-                                    if (zipEntryName.startsWith("bin/") || zipEntryName.startsWith("libexec") || zipEntryName.startsWith("lib/apt/methods")) {
-                                        //noinspection OctalInteger
-                                        Os.chmod(targetFile.getAbsolutePath(), 0700);
+                                } else {
+                                    String zipEntryName = zipEntry.getName();
+                                    File targetFile = new File(STAGING_PREFIX_PATH, zipEntryName);
+                                    boolean isDirectory = zipEntry.isDirectory();
+
+                                    ensureDirectoryExists(isDirectory ? targetFile : targetFile.getParentFile());
+
+                                    if (!isDirectory) {
+                                        try (FileOutputStream outStream = new FileOutputStream(targetFile)) {
+                                            int readBytes;
+                                            while ((readBytes = zipInput.read(buffer)) != -1)
+                                                outStream.write(buffer, 0, readBytes);
+                                        }
+                                        if (zipEntryName.startsWith("bin/") || zipEntryName.startsWith("libexec") || zipEntryName.startsWith("lib/apt/methods")) {
+                                            //noinspection OctalInteger
+                                            Os.chmod(targetFile.getAbsolutePath(), 0700);
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
+                    });
 
                     if (symlinks.isEmpty())
                         throw new RuntimeException("No SYMLINKS.txt encountered");
@@ -141,9 +146,9 @@ public final class TermuxInstaller {
                                         dialog.dismiss();
                                         activity.finish();
                                     }).setPositiveButton(R.string.bootstrap_error_try_again, (dialog, which) -> {
-                                dialog.dismiss();
-                                TermuxInstaller.setupIfNeeded(activity, whenDone);
-                            }).show();
+                                        dialog.dismiss();
+                                        TermuxInstaller.setupIfNeeded(activity, whenDone);
+                                    }).show();
                         } catch (WindowManager.BadTokenException e1) {
                             // Activity already dismissed - ignore.
                         }
@@ -168,10 +173,18 @@ public final class TermuxInstaller {
         }
     }
 
-    public static byte[] loadZipBytes() {
-        // Only load the shared library when necessary to save memory usage.
-        System.loadLibrary("vsc-bootstrap");
-        return getZip();
+    @FunctionalInterface
+    interface ZipBytesRunnable {
+        void apply(final byte[] bytes) throws Exception;
+    }
+
+    public static void loadZipBytes(ZipBytesRunnable r) throws Exception {
+        System.loadLibrary("termux-bootstrap");
+        try {
+            r.apply(getZip());
+        } finally {
+            CodeServerService.Companion.unloadLibrary("termux-bootstrap");
+        }
     }
 
     public static native byte[] getZip();

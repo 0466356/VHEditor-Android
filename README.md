@@ -1,11 +1,12 @@
 VHEditor Android
 =================
 
-This project use [https://github.com/cdr/code-server](cdr/code-server) as the core engine, not Visual Studio Code and is not affiliated with or endorsed by Microsoft Corporation.
+[![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
 
-If you want to play with the server, build it yourself using [this repo](https://github.com/vhqtvn/vscode-android-server).
+![VHEditor on Surface Duo 2](https://vhn.vn/images/vheditor.jpg "VHEditor on Surface Duo 2")
 
-This app has builtin termux, you can start right away by openning the terminal view and run `pkg install git` (there's maybe incompatible package, please report).
+This project uses [https://github.com/cdr/code-server](https://github.com/cdr/code-server) as its core engine, and not Visual Studio Code. It is not affiliated with or endorsed by Microsoft Corporation.
 
-Google play link: [https://play.google.com/store/apps/details?id=vn.vhn.vsc](https://play.google.com/store/apps/details?id=vn.vhn.vsc). Latest stable version are on Google Play.
+To play with the server, build it yourself using [this repository](https://github.com/vhqtvn/vscode-android-server).
 
+This app has built-in termux, you can start right away by opening the terminal view and run `apt install git` (there's maybe incompatible package, please report).

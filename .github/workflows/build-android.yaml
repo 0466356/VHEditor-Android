@@ -9,15 +9,39 @@ jobs:
   build-android:
     runs-on: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
         with:
-          lfs: true
+          fetch-depth: 7
+          submodules: recursive
       - uses: actions/setup-java@v1
         with:
           java-version: '12.x'
-      - name: "Build"
+      - name: "npm install"
         run: |
-          USE_SPLITBUILD=1 CI_BUILD=1 ./gradlew assembleRelease
+          npm ci
+      - name: "patch deps"
+        run: |
+          node ./ci/patch-deps
+      - name: "build jsbundle"
+        run: |
+          npm run bundle-rnjs
+      - name: "Setup variables"
+        id: build-config
+        run: |
+          echo '::echo::on'
+          echo '::set-output name=is_prerelease::'$(node ./ci/is-prerelease "$(basename ${{ github.ref }})")
+          echo '::set-output name=version_name::'$(basename ${{ github.ref }} | sed 's/^v//')
+      - name: "Build for Google Play"
+        run: |
+          [[ -z "${{ steps.build-config.outputs.version_name }}" ]] && exit 13
+          npm run play -- --no-daemon
+      - name: "Build for Github release"
+        run: |
+          [[ -z "${{ steps.build-config.outputs.version_name }}" ]] && exit 13
+          USE_SPLITBUILD=1 CI_BUILD=1 CI_VERSION_NAME="${{ steps.build-config.outputs.version_name }}" ./gradlew assembleRelease --no-daemon
+      - name: "Changelog"
+        run: |
+           git log -p -n1 -- CHANGELOG.md  | grep -Po '(?<=^\+)(?!\+\+).*' > CHANGELOG_current.md
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -26,15 +50,16 @@ jobs:
         with:
           tag_name: ${{ github.ref }}
           release_name: Release ${{ github.ref }}
+          body_path: CHANGELOG_current.md
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.build-config.outputs.is_prerelease }}
       - name: Upload arm64 release
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_name: VHSCode-arm64.apk
+          asset_name: VHSCode-arm64--${{ steps.build-config.outputs.version_name }}.apk
           asset_path: ./app/build/outputs/apk/release/app-arm64-v8a-release.apk
           asset_content_type: application/vnd.android.package-archive
       - name: Upload arm release
@@ -43,7 +68,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_name: VHSCode-arm.apk
+          asset_name: VHSCode--arm---${{ steps.build-config.outputs.version_name }}.apk
           asset_path: ./app/build/outputs/apk/release/app-armeabi-v7a-release.apk
           asset_content_type: application/vnd.android.package-archive
       - name: Upload x86_64 release
@@ -52,7 +77,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_name: VHSCode-x86_64.apk
+          asset_name: VHSCode-x86_64-${{ steps.build-config.outputs.version_name }}.apk
           asset_path: ./app/build/outputs/apk/release/app-x86_64-release.apk
           asset_content_type: application/vnd.android.package-archive
       - name: Upload x86 release
@@ -61,6 +86,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_name: VHSCode-x86.apk
+          asset_name: VHSCode--x86---${{ steps.build-config.outputs.version_name }}.apk
           asset_path: ./app/build/outputs/apk/release/app-x86-release.apk
           asset_content_type: application/vnd.android.package-archive
+      - name: Upload GooglePlay bundle
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_name: VHSCode-gplay-${{ steps.build-config.outputs.version_name }}.aab
+          asset_path: ./app/build/outputs/bundle/release/app-release.aab
+          asset_content_type: application/x-authorware-bin

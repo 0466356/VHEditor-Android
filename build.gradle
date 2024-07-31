@@ -1,25 +1,55 @@
+import groovy.json.JsonSlurper
+
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
-buildscript {
-    ext.kotlin_version = '1.3.72'
-    repositories {
-        mavenCentral()
-        google()
+// hack to help react-native-fs compiles...
+rootProject.ext.compileSdkVersion = rootProject.ext.compileSdkVersion.toInteger()
 
+rootProject.ext.rootDir = "$rootDir"
+
+buildscript {
+    repositories {
+        google()
+        jcenter()
+        mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:4.2.1'
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath 'com.android.tools.build:gradle'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.0"
+        classpath("com.facebook.react:react-native-gradle-plugin")
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
     }
 }
 
+// https://github.com/facebook/react-native/issues/35210
+def REACT_NATIVE_VERSION = new JsonSlurper().parseText(file("$rootDir/package-lock.json").text).packages['node_modules/react-native'].version
+
+print("REACT_NATIVE_VERSION=" + REACT_NATIVE_VERSION)
+
 allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force "com.facebook.react:react-native:" + REACT_NATIVE_VERSION
+        }
+    }
     repositories {
-        mavenCentral()
         google()
+        jcenter()
+        maven { url "https://jitpack.io" }
+        maven {
+            url 'https://pkgs.dev.azure.com/MicrosoftDeviceSDK/DuoSDK-Public/_packaging/Duo-SDK-Feed/maven/v1'
+        }
+        mavenCentral()
+//        maven {
+//            // All of React Native (JS, Android binaries) is installed from npm
+//            url "$rootDir/node_modules/react-native/android"
+//        }
+//        maven {
+//            // Android JSC is installed from npm
+//            url "$rootDir/node_modules/jsc-android/dist"
+//        }
     }
 }
 
